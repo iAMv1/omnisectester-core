@@ -132,7 +132,7 @@ class TestOsvBatch(unittest.TestCase):
         def fake_post(req, timeout=0):
             calls.append(req.full_url)
             payload = json.loads(req.data)
-            results = [{"vulns": [{"id": f"OSV-{i}"}]} for _ in payload["queries"]]
+            results = [{"vulns": [{"id": f"OSV-{n}"}]} for n in range(len(payload["queries"]))]
             body = json.dumps({"results": results}).encode()
 
             class R:
