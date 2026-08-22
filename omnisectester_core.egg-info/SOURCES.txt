@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+omnisectester/__init__.py
+omnisectester/cli.py
+omnisectester/httpc.py
+omnisectester/report.py
+omnisectester/sbom.py
+omnisectester/scanner.py
+omnisectester/threatmodel.py
+omnisectester_core.egg-info/PKG-INFO
+omnisectester_core.egg-info/SOURCES.txt
+omnisectester_core.egg-info/dependency_links.txt
+omnisectester_core.egg-info/entry_points.txt
+omnisectester_core.egg-info/top_level.txt
+tests/test_core.py

@@ -167,10 +167,13 @@ def _exit_code(result: dict, fail_on: str = "none") -> int:
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if not argv:
-        _emit({"ok": False, "error": "no command given"})
-        return 1
-
+    if not argv or argv[0] in ("--help", "-h", "help"):
+        usage = ("usage: omnisectester-core <command> [--json] [flags]\n\n"
+                 f"commands: {', '.join(sorted(COMMANDS))}\n"
+                 "example: omnisectester-core scan web https://example.test "
+                 "--rate-limit 2 --fail-on critical")
+        print(usage, file=sys.stderr)
+        return 1 if not argv else 0
     command = argv[0]
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--json", action="store_true", default=False)
