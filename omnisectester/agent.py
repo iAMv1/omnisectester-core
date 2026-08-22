@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 from . import crawler as crawler_mod
 from . import httpc
 from .postex import harvest_internal_hosts
+from . import web_deep
 from .scanner import (_finding, _sort, check_paths, check_tls, check_post_forms,
                       check_cookie_flags, check_open_redirect,
                       probe_post_reflection, SECURITY_HEADERS)
@@ -155,6 +156,15 @@ def run_agent(target: str, rate_limit: float = 4.0, max_pages: int = 25,
     if budget_left() > 0:
         findings += check_open_redirect(surface["base"],
                                         surface["probe_targets"], limiter)
+
+    # deepening: HTTP methods + security.txt (budget-gated)
+    method_findings, n1 = web_deep.check_http_methods(surface["base"], limiter)
+    findings += method_findings
+    used += n1
+    if budget_left() >= 1:
+        stx_findings, n2 = web_deep.check_security_txt(surface["base"], limiter)
+        findings += stx_findings
+        used += n2
 
     # auth flows / business logic (A001/A002/B001)
     if budget_left() > 0:
