@@ -1,4 +1,4 @@
-﻿[project]
+[project]
 name = "omnisectester-core"
 version = "1.6.0"
 description = "Python scanning engine behind the omnisectester CLI bridge. Stdlib-only v0.1.0."
