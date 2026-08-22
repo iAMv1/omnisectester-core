@@ -120,6 +120,24 @@ class FixtureHandler(BaseHTTPRequestHandler):
             qs = parse_qs(urlparse(self.path).query)
             uid = qs.get("id", ["1"])[0]
             self._send(200, f"<html>profile page for user {uid}: email=user{uid}@example.test</html>")
+        elif path == "/spa":
+            # SPA hydration pattern: reflects q verbatim INSIDE an inline
+            # <script> JSON blob - inert in browsers, must not be XSS-flagged.
+            from urllib.parse import parse_qs, urlparse
+            qs = parse_qs(urlparse(self.path).query)
+            q = qs.get("q", [""])[0]
+            self._send(200,
+                       "<html><head><script>window.STATE="
+                       "{\"lastQuery\":\"" + q + "\"};</script></head>"
+                       "<body>spa shell - no server-side rendering</body></html>")
+        elif path == "/apiecho":
+            # JSON echo endpoint: reflects q verbatim inside a JSON string
+            # (httpbin /post pattern) - inert, must not be XSS-flagged.
+            from urllib.parse import parse_qs, urlparse
+            qs = parse_qs(urlparse(self.path).query)
+            q = qs.get("q", [""])[0]
+            self._send(200, "{\"args\": {\"q\": \"" + q + "\"}}",
+                       "application/json")
         else:
             self._send(404, "not found")
 

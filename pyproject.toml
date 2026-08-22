@@ -1,6 +1,6 @@
 [project]
 name = "omnisectester-core"
-version = "1.6.2"
+version = "1.6.3"
 description = "Python scanning engine behind the omnisectester CLI bridge. Stdlib-only v0.1.0."
 requires-python = ">=3.10"
 license = { text = "MIT" }

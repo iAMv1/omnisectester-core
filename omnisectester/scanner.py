@@ -196,6 +196,40 @@ def check_paths(base_url: str, limiter) -> list:
 SUSPICIOUS_REDIRECT_PARAMS = {"url", "redirect", "redirect_uri", "next",
                               "target", "rurl", "return", "returnurl", "goto"}
 
+# Browser-like script parsing: a <script> block ends at the FIRST closing
+# tag. SPAs hydrate state into inline <script> JSON and may echo arbitrary
+# query params verbatim there; such reflections render inert, so they must
+# not be reported as XSS.
+_SCRIPT_BLOCK = re.compile(r"<script\b[^>]*>.*?</script\s*>", re.I | re.S)
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
+def _reflection_confirmed(body: str, marker: str,
+                          content_type: str = "") -> bool:
+    """True when `marker` lands in executable markup context.
+
+    Only HTML/XML responses can execute injected markup: JSON or plain
+    text bodies render inert (e.g. echo endpoints like httpbin /post
+    return the payload inside a JSON string - not XSS).
+    On top of that, a verbatim reflection must FORM its own <script>
+    block; markers merely echoed inside existing inline scripts (SPA
+    state hydration) or comments do not execute either. Parsing mirrors
+    browsers: a block ends at the first closing tag.
+    """
+    ct = (content_type or "").lower()
+    if ct and "html" not in ct and "xml" not in ct:
+        return False
+    if marker not in body:
+        return False
+
+    def _keep(match):
+        core = re.sub(r"</?\s*script\b[^>]*>", "", match.group(0),
+                      flags=re.I).strip()
+        # A block consisting solely of the payload is the injected
+        # artifact itself - keep it. Anything bigger is host code.
+        return match.group(0) if core in ("omni_probe()", REFLECTION_MARKER) else ""
+
+    stripped = _HTML_COMMENT.sub("", _SCRIPT_BLOCK.sub(_keep, body))
+    return marker in stripped and "<script>" in stripped.lower()
+
 
 def check_open_redirect(base_url: str, probe_targets: list, limiter) -> list:
     """For discovered params named like redirect sinks, inject an external
@@ -241,7 +275,9 @@ def check_xss_reflected(base_url: str, limiter) -> list:
     probe_url = f"{base_url}{sep}q={XSS_PROBE}"
     limiter.wait()
     resp = httpc.request(probe_url)
-    if resp.get("ok") and XSS_MARKER in resp.get("body", "") and "<script>omni_probe()" in resp["body"]:
+    if resp.get("ok") and _reflection_confirmed(
+            resp.get("body", ""), XSS_MARKER,
+            (resp.get("headers") or {}).get("content-type", "")):
         found.append(_finding(
             "X001", "Reflected input rendered without encoding", "high",
             f"Marker from query param reflected verbatim at {probe_url[:120]}", "CWE-79",
@@ -330,8 +366,11 @@ def check_post_forms(forms: list, base_url: str) -> list:
         if f["fields"] and not any(re.search(r"csrf|token|nonce|_token", x, re.I)
                                    for x in f["fields"]):
             found.append(_finding(
-                "F001", "POST form without CSRF token", "medium",
-                f"POST {action} fields={f['fields']}", "CWE-352",
+                "F001", "POST form without visible CSRF token", "medium",
+                f"Static markup audit: POST {action} fields={f['fields']} "
+                f"shows no csrf/token/nonce field. Forms that add tokens "
+                f"via JS at submit time are out of scope for this check.",
+                "CWE-352",
                 "Add per-session CSRF tokens and verify server-side."))
     return found
 
@@ -349,7 +388,9 @@ def probe_post_reflection(forms: list, limiter) -> list:
         resp = httpc.request(f["action"], method="POST", data=data.encode(),
                              headers={"Content-Type": "application/x-www-form-urlencoded"})
         if resp.get("ok") and REFLECTION_MARKER in resp.get("body", "") \
-                and f"<script>{REFLECTION_MARKER}" in resp["body"]:
+                and _reflection_confirmed(
+                    resp.get("body", ""), REFLECTION_MARKER,
+                    (resp.get("headers") or {}).get("content-type", "")):
             finding = _finding(
                 "X002", f"Reflected XSS via POST `{f['fields'][0]}`", "high",
                 "POST body value echoed verbatim.", "CWE-79",
