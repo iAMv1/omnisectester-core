@@ -114,6 +114,11 @@ def cmd_scan(opts: dict) -> dict:
         result = exe_scan.run_exe_scan(target)
         result["gate"] = {"fail_on": fail_on,
                           "triggered": _exit_code(result, fail_on) == 2}
+    elif platform == "cloud":
+        from omnisectester import cloud_scan
+        result = cloud_scan.run_cloud_scan(target or ".")
+        result["gate"] = {"fail_on": fail_on,
+                          "triggered": _exit_code(result, fail_on) == 2}
         # optional LLM narrative/chaining layer - only when --llm AND key+model set.
         # Never touches deterministic findings; lands under llm_analysis.
         if opts.get("llm"):
