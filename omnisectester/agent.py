@@ -58,13 +58,21 @@ def _headers_on_page(page_url: str, limiter, header_miss_counter: dict) -> None:
 def run_agent(target: str, rate_limit: float = 4.0, max_pages: int = 25,
               fail_on: str = "none", budget: int = DEFAULT_BUDGET,
               auth_type: str = "none", auth_token=None,
-              include_subdomains: bool = False, exclude_patterns=None) -> dict:
+              include_subdomains: bool = False, exclude_patterns=None,
+              login_url: str | None = None, login_data: str | None = None) -> dict:
     limiter = httpc.RateLimiter(rate_limit)
     if auth_type != "none" and auth_token:
         httpc.set_auth(auth_type, auth_token)
 
     # ---- phase 1: threat model BEFORE any testing (project promise) ----
     tm = build_threat_model(target)
+
+    # ---- phase 0.5: optional form login -> session cookies ----
+    login_result = None
+    if login_url and login_data:
+        limiter.wait()
+        login_result = httpc.login(login_url, login_data)
+        used = 1
 
     # ---- phase 2: crawl ----
     surface = crawler_mod.crawl(target, max_pages=max_pages, rate_limit=rate_limit,
@@ -159,7 +167,8 @@ def run_agent(target: str, rate_limit: float = 4.0, max_pages: int = 25,
     return {
         "command": "scan", "platform": "web", "target": target, "ok": True,
         "agent": {"phases": ["model", "crawl", "probe", "validate", "report"],
-                  "budget": budget, "requests_used": used},
+                  "budget": budget, "requests_used": used,
+                  "login": login_result},
         "surface": {"pages_crawled": surface["stats"]["pages_crawled"],
                     "forms": surface["stats"]["forms"],
                     "param_endpoints": surface["stats"]["param_endpoints"],

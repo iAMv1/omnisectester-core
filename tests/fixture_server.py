@@ -42,6 +42,12 @@ class FixtureHandler(BaseHTTPRequestHandler):
         if self.path == "/login":
             user = fields.get("username", [""])[0]
             self._send(200, f"<html>welcome back {user}</html>")
+        elif self.path == "/setcookie":
+            self.send_response(200)
+            self.send_header("Set-Cookie", "session=abc123; HttpOnly")
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"<html>session set</html>")
         else:
             self._send(404, "no post")
 
@@ -58,7 +64,14 @@ class FixtureHandler(BaseHTTPRequestHandler):
             self._send(200, ABOUT_PAGE)
         elif path == "/authecho":
             auth = self.headers.get("Authorization", "(none)")
-            self._send(200, f"auth=[{auth}]")
+            cookie = self.headers.get("Cookie", "(none)")
+            self._send(200, f"auth=[{auth}] cookie=[{cookie}]")
+        elif path == "/setcookie":
+            self.send_response(200)
+            self.send_header("Set-Cookie", "session=abc123; HttpOnly")
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"<html>session set</html>")
         elif path == "/.env":
             self._send(200, "SECRET_KEY=abc123\nDB_PASSWORD=hunter2\n")
         elif path == "/robots.txt":

@@ -86,7 +86,9 @@ def cmd_scan(opts: dict) -> dict:
                                  auth_type=str(opts.get("auth", "none")),
                                  auth_token=opts.get("auth_token"),
                                  include_subdomains=bool(opts.get("include_subdomains")),
-                                 exclude_patterns=opts.get("exclude"))
+                                 exclude_patterns=opts.get("exclude"),
+                                 login_url=opts.get("login_url"),
+                                 login_data=opts.get("login_data"))
         # expose gate decision so the Node CLI can mirror the exit code
         result["gate"] = {"fail_on": fail_on,
                           "triggered": _exit_code(result, fail_on) == 2}

@@ -52,6 +52,7 @@ def tls_info(host: str, port: int = 443, timeout: float = 8.0) -> dict:
 
 # Session-wide auth headers (set once by the agent from CLI flags).
 _default_headers: dict = {}
+_last_response_headers: dict = {}
 
 
 def set_auth(auth_type: str = "none", token=None):
@@ -74,6 +75,32 @@ def set_auth(auth_type: str = "none", token=None):
     elif auth_type == "header" and token and ":" in str(token):
         name, _, value = str(token).partition(":")
         _default_headers[name.strip()] = value.strip()
+
+
+def adopt_session_cookies(resp: dict):
+    """Merge Set-Cookie from a response into the default Cookie header -
+    used after form login so subsequent probes are authenticated."""
+    global _default_headers
+    set_cookies = [v for k, v in (resp.get("headers") or {}).items()
+                   if k.lower() == "set-cookie"]
+    if not set_cookies:
+        return False
+    pairs = []
+    for sc in set_cookies:
+        pairs.append(sc.split(";")[0].strip())
+    existing = (_default_headers.get("Cookie", "") + "; ").strip("; ")
+    _default_headers["Cookie"] = ("; ".join([existing] + pairs)).strip("; ")
+    return True
+
+
+def login(url: str, data: str, timeout: float = 10.0) -> dict:
+    """POST login data, adopt session cookie. Returns {ok, status}."""
+    resp = request(url, method="POST", data=data.encode(),
+                   headers={"Content-Type": "application/x-www-form-urlencoded"},
+                   timeout=timeout)
+    adopted = adopt_session_cookies(resp) if resp.get("ok") else False
+    return {"ok": bool(resp.get("ok")), "status": resp.get("status"),
+            "session_adopted": adopted}
 
 
 def request(url: str, method: str = "GET", headers: dict | None = None,

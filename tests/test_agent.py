@@ -106,6 +106,18 @@ class TestAgent(unittest.TestCase):
             self.assertIn("$ curl", html_out)
             self.assertIn("omni_probe7x", html_out)
 
+    def test_form_login_session_adopted(self):
+        from omnisectester import httpc
+        httpc.set_auth("none")
+        result = agent.run_agent(self.fix.url, rate_limit=50, budget=80,
+                                 login_url=self.fix.url + "/setcookie",
+                                 login_data="x=1")
+        self.assertTrue(result["agent"]["login"]["session_adopted"])
+        # session cookie must have authenticated later probes:
+        resp = httpc.request(self.fix.url + "/authecho")
+        self.assertIn("session=abc123", resp.get("body", ""),
+                      "adopted cookie not sent on subsequent requests")
+
     def test_budget_is_respected(self):
         tight = agent.run_agent(self.fix.url, rate_limit=50, budget=5)
         self.assertLessEqual(tight["agent"]["requests_used"], 7)  # small slack
