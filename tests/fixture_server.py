@@ -13,8 +13,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PAGE = """<html><head><title>fixture</title></head><body>
 <h1>Fixture</h1>
+<a href="/search">search</a>
+<a href="/about">about</a>
 <form action="/search" method="get"><input name="q"></form>
 </body></html>"""
+SEARCH_PAGE = "<html><body>results for [{}]</body></html>"
+ABOUT_PAGE = "<html><body>about us</body></html>"
 
 
 class FixtureHandler(BaseHTTPRequestHandler):
@@ -30,10 +34,16 @@ class FixtureHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_GET(self):
+        from urllib.parse import urlparse, parse_qs, urlencode
         path = self.path.split("?")[0]
         if self.path.startswith("/?") or path == "/":
-            # reflect q= verbatim (XSS probe target)
             self._send(200, PAGE + (self.path[self.path.find("?"):] if "?" in self.path else ""))
+        elif path == "/search":
+            q = parse_qs(urlparse(self.path).query).get("q", [""])[0]
+            # reflects q verbatim inside brackets - XSS probe target
+            self._send(200, SEARCH_PAGE.format(q))
+        elif path == "/about":
+            self._send(200, ABOUT_PAGE)
         elif path == "/.env":
             self._send(200, "SECRET_KEY=abc123\nDB_PASSWORD=hunter2\n")
         elif path == "/robots.txt":

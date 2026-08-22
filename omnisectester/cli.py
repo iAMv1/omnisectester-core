@@ -72,14 +72,18 @@ def _coerce(value: str):
 def cmd_scan(opts: dict) -> dict:
     platform = opts.get("platform", "web")
     target = opts.get("target") or opts.get("_target") or ""
-    rate = float(opts.get("rate_limit", 1))
+    rate = float(opts.get("rate_limit", 4))
     fmts = opts.get("format")
     output = opts.get("output", "./reports")
+    max_pages = int(opts.get("max_pages", 25))
+    fail_on = str(opts.get("fail_on", "none"))
 
     if platform in ("web", "api"):
-        result = scanner.scan_web(target, rate_limit=rate)
+        # v0.2: the deterministic agent loop (tm-first, crawl, probe, validate)
+        from . import agent
+        result = agent.run_agent(target, rate_limit=rate,
+                                 max_pages=max_pages, fail_on=fail_on)
     else:
-        # Mobile/cloud/AI/firmware engines land in v0.2+; fail loudly but structuredly.
         result = {"command": "scan", "platform": platform, "target": target,
                   "ok": False,
                   "error": f"engine for platform '{platform}' not yet implemented (v0.1 covers web)",
@@ -93,15 +97,16 @@ def cmd_scan(opts: dict) -> dict:
 
 def cmd_engage(opts: dict) -> dict:
     target = opts.get("target") or opts.get("_target") or ""
-    scan_result = scanner.scan_web(target, rate_limit=float(opts.get("rate_limit", 1)))
-    tm = threatmodel.build_threat_model(
-        target, adversary=(opts.get("adversary") or "APT29").split(","))
+    from . import agent
+    scan_result = agent.run_agent(target, rate_limit=float(opts.get("rate_limit", 4)),
+                                  max_pages=int(opts.get("max_pages", 25)))
+    # threat model already ran first INSIDE the agent; reuse it
     merged = {
         "command": "engage",
         "target": target,
         "ok": scan_result.get("ok", False),
-        "scan": scan_result,
-        "threat_model": tm,
+        "scan": {k: v for k, v in scan_result.items() if k != "threat_model"},
+        "threat_model": scan_result.get("threat_model"),
         "stats": scan_result.get("stats", {}),
         "findings": scan_result.get("findings", []),
     }
@@ -129,7 +134,30 @@ def cmd_report(opts: dict) -> dict:
 
 def cmd_sbom(opts: dict) -> dict:
     root = opts.get("_target") or opts.get("target") or "."
-    return sbom.generate_sbom(root, include_vulns=bool(opts.get("vulns")))
+    result = sbom.generate_sbom(root, include_vulns=bool(opts.get("vulns")))
+    if opts.get("vulns") and result.get("ok"):
+        # real vulnerability matching via OSV.dev (free, keyless)
+        from . import osv
+        all_vulns = []
+        errors = []
+        for eco in ("pypi", "npm"):
+            comps = [c for c in result.get("components", [])
+                     if f"/{eco}/" in c.get("purl", "")]
+            vulns, errs = osv.enrich_components(comps, eco,
+                                                timeout=float(opts.get("timeout", 8)))
+            all_vulns += vulns
+            errors += errs
+        result["vulnerabilities"] = all_vulns
+        if errors:
+            result.setdefault("metadata", {}).setdefault(
+                "properties", []).append({"name": "osvErrors", "value": "; ".join(errors[:5])})
+        counts = {}
+        for v in all_vulns:
+            for alias in v["aliases"] or [v["id"]]:
+                counts[alias] = 1
+        result["stats"] = {"components": len(result.get("components", [])),
+                           "vulnerabilities": len(all_vulns)}
+    return result
 
 
 def cmd_continuous(opts: dict) -> dict:
