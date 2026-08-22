@@ -99,6 +99,11 @@ def cmd_scan(opts: dict) -> dict:
                                        api_key=opts.get("auth_token"))
         result["gate"] = {"fail_on": fail_on,
                           "triggered": _exit_code(result, fail_on) == 2}
+    elif platform == "supply-chain":
+        from omnisectester import scm_scan
+        result = scm_scan.run_scm_scan(target or ".")
+        result["gate"] = {"fail_on": fail_on,
+                          "triggered": _exit_code(result, fail_on) == 2}
         # optional LLM narrative/chaining layer - only when --llm AND key+model set.
         # Never touches deterministic findings; lands under llm_analysis.
         if opts.get("llm"):
