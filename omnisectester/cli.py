@@ -262,6 +262,22 @@ def cmd_continuous(opts: dict) -> dict:
     }
 
 
+def cmd_postexploit(opts: dict) -> dict:
+    """Run the agent on the target, then map evidence to ATT&CK."""
+    from omnisectester import agent as agent_mod
+    from omnisectester import postex
+    target = opts.get("_target") or opts.get("target") or ""
+    scan_result = agent_mod.run_agent(
+        target, rate_limit=float(opts.get("rate_limit", 4)),
+        max_pages=int(opts.get("max_pages", 25)))
+    assessment = postex.analyze(scan_result)
+    return {"command": "postexploit", "target": target,
+            "ok": scan_result.get("ok", False),
+            "scan_summary": scan_result.get("stats"),
+            "internal_hosts": scan_result.get("internal_hosts", []),
+            **assessment}
+
+
 COMMANDS = {
     "scan": cmd_scan,
     "engage": cmd_engage,
@@ -269,6 +285,7 @@ COMMANDS = {
     "report": cmd_report,
     "sbom": cmd_sbom,
     "continuous": cmd_continuous,
+    "postexploit": cmd_postexploit,
 }
 
 

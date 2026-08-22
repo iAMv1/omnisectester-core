@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 from . import crawler as crawler_mod
 from . import httpc
+from .postex import harvest_internal_hosts
 from .scanner import (_finding, _sort, check_paths, check_tls, check_post_forms,
                       check_cookie_flags, check_open_redirect,
                       probe_post_reflection, SECURITY_HEADERS)
@@ -92,6 +93,7 @@ def run_agent(target: str, rate_limit: float = 4.0, max_pages: int = 25,
     # headers + cookie audit across discovered pages (single fetch each)
     misses = {}
     cookie_findings = []
+    internal_hosts = []
     for page in surface["pages"]:
         if budget_left() <= 0:
             break
@@ -99,6 +101,7 @@ def run_agent(target: str, rate_limit: float = 4.0, max_pages: int = 25,
         used += 1
         if resp:
             cookie_findings += check_cookie_flags(resp)
+            internal_hosts += harvest_internal_hosts(resp.get("body", ""))
     for fid, count in sorted(misses.items()):
         meta = next(m for m in SECURITY_HEADERS if m[2] == fid)
         sev = "medium" if count == len(surface["pages"]) else "low"
@@ -207,6 +210,7 @@ def run_agent(target: str, rate_limit: float = 4.0, max_pages: int = 25,
                     "param_endpoints": surface["stats"]["param_endpoints"],
                     "probe_targets": surface["probe_targets"]},
         "threat_model": tm_updated,
+        "internal_hosts": sorted(set(internal_hosts)),
         "findings": final,
         "stats": {"requests": used, "total": len(final), **counts},
     }

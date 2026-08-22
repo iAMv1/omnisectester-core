@@ -22,7 +22,8 @@ PAGE = """<html><head><title>fixture</title></head><body>
 <form action="/login" method="post"><input name="username"><input name="password"></form>
 </body></html>"""
 SEARCH_PAGE = "<html><body>results for [{}]</body></html>"
-ABOUT_PAGE = "<html><body>about us</body></html>"
+ABOUT_PAGE = ("<html><body>about us - internal services at "
+              "10.0.0.5 and gitlab.internal</body></html>")
 
 
 class FixtureHandler(BaseHTTPRequestHandler):
