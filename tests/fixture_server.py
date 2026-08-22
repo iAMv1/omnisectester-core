@@ -15,6 +15,7 @@ PAGE = """<html><head><title>fixture</title></head><body>
 <h1>Fixture</h1>
 <a href="/search">search</a>
 <a href="/about">about</a>
+<a href="/goto?next=https://external.example/">go</a>
 <form action="/search" method="get"><input name="q"></form>
 <form action="/login" method="post"><input name="username"><input name="password"></form>
 </body></html>"""
@@ -66,6 +67,16 @@ class FixtureHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html")
             self.end_headers()
             self.wfile.write(ABOUT_PAGE.encode())
+        elif path == "/goto":
+            from urllib.parse import parse_qs, urlparse
+            qs = parse_qs(urlparse(self.path).query)
+            nxt = qs.get("next", [""])[0]
+            if nxt.startswith("http"):
+                self.send_response(302)
+                self.send_header("Location", nxt)
+                self.end_headers()
+            else:
+                self._send(200, "stay")
         elif path == "/authecho":
             auth = self.headers.get("Authorization", "(none)")
             cookie = self.headers.get("Cookie", "(none)")

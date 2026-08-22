@@ -124,6 +124,12 @@ class TestAgent(unittest.TestCase):
         for expected in ("C001", "C002", "C003"):
             self.assertIn(expected, ids, f"cookie finding {expected} missing")
 
+    def test_open_redirect_detected_on_discovered_param(self):
+        result = agent.run_agent(self.fix.url, rate_limit=50, budget=100)
+        r1 = [f for f in result["findings"] if f["id"] == "R001"]
+        self.assertTrue(r1, f"open redirect not detected: {result['surface']}")
+        self.assertIn("curl -sI", r1[0]["poc"])
+
     def test_sarif_output_structure(self):
         result = agent.run_agent(self.fix.url, rate_limit=50, budget=80)
         from omnisectester.report import to_sarif

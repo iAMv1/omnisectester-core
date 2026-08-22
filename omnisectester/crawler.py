@@ -71,6 +71,12 @@ def crawl(seed_url: str, max_pages: int = 25, rate_limit: float = 4.0,
         for href in LINK_RE.findall(body):
             absolute = urljoin(norm, href.split("#")[0])
             if in_scope(absolute) and absolute not in seen:
+                # record query params at discovery time - redirecting pages
+                # may never be fetched successfully later
+                for qs_name, _val in parse_qsl(urlparse(absolute).query,
+                                               keep_blank_values=True):
+                    params.setdefault(urlparse(absolute).path or "/",
+                                      set()).add(qs_name)
                 queue.append(absolute)
 
         for fm in FORM_RE.finditer(body):

@@ -103,6 +103,10 @@ def login(url: str, data: str, timeout: float = 10.0) -> dict:
             "session_adopted": adopted}
 
 
+def httpc_default_headers() -> dict:
+    return dict(_default_headers)
+
+
 def request(url: str, method: str = "GET", headers: dict | None = None,
             timeout: float = 10.0, data=None) -> dict:
     """Perform one HTTP request and normalize the response into a dict."""
@@ -126,6 +130,30 @@ def request(url: str, method: str = "GET", headers: dict | None = None,
             "body": (exc.read(262144) or b"").decode("utf-8", errors="replace"),
             "url": url,
         }
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc), "url": url}
+
+
+def request_nofollow(url: str, method: str = "GET", timeout: float = 10.0) -> dict:
+    """Like request(), but 3xx responses are returned as-is (no following)."""
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            return None
+
+    opener = urllib.request.build_opener(_NoRedirect)
+    req = urllib.request.Request(url, method=method,
+                                 headers=dict(httpc_default_headers()))
+    try:
+        with opener.open(req, timeout=timeout) as resp:
+            body = resp.read(262144).decode("utf-8", errors="replace")
+            return {"ok": True, "status": resp.status,
+                    "headers": {k.lower(): v for k, v in resp.headers.items()},
+                    "body": body, "url": url}
+    except urllib.error.HTTPError as exc:
+        return {"ok": True, "status": exc.code,
+                "headers": {k.lower(): v for k, v in exc.headers.items()},
+                "body": "", "url": url}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc), "url": url}
 

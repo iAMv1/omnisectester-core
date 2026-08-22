@@ -107,6 +107,37 @@ def check_paths(base_url: str, limiter) -> list:
     return found
 
 
+SUSPICIOUS_REDIRECT_PARAMS = {"url", "redirect", "redirect_uri", "next",
+                              "target", "rurl", "return", "returnurl", "goto"}
+
+
+def check_open_redirect(base_url: str, probe_targets: list, limiter) -> list:
+    """For discovered params named like redirect sinks, inject an external
+    absolute URL and inspect the response Location header."""
+    from urllib.parse import urlencode
+    found = []
+    external = "https://omnisectester-redirect-probe.example/"
+    for pt in probe_targets:
+        param = pt["param"].lower()
+        if param not in SUSPICIOUS_REDIRECT_PARAMS:
+            continue
+        probe_url = f"{base_url.rstrip('/')}{pt['path']}?{urlencode({pt['param']: external})}"
+        limiter.wait()
+        resp = httpc.request_nofollow(probe_url)
+        location = (resp.get("headers") or {}).get("location", "")
+        if resp.get("ok") and location.startswith("http") \
+                and "omnisectester-redirect-probe.example" in location:
+            finding = _finding(
+                "R001", f"Open redirect via `{pt['param']}`", "high",
+                f"{probe_url[:120]} -> Location: {location[:120]}", "CWE-601",
+                "Validate redirect destinations against an allowlist; "
+                "prefer relative paths.")
+            finding["poc"] = f"curl -sI '{probe_url}' | grep -i '^location:'"
+            finding["url"] = probe_url
+            found.append(finding)
+    return found
+
+
 def extract_forms(html: str) -> list:
     forms = []
     for match in re.finditer(r"<form[^>]*>(.*?)</form>", html, re.I | re.S):

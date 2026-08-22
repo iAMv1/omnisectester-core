@@ -16,8 +16,8 @@ from urllib.parse import urlparse
 from . import crawler as crawler_mod
 from . import httpc
 from .scanner import (_finding, _sort, check_paths, check_tls, check_post_forms,
-                      check_cookie_flags, probe_post_reflection,
-                      SECURITY_HEADERS)
+                      check_cookie_flags, check_open_redirect,
+                      probe_post_reflection, SECURITY_HEADERS)
 from .threatmodel import build_threat_model
 
 DEFAULT_BUDGET = 60          # max total HTTP requests for the whole agent run
@@ -146,6 +146,11 @@ def run_agent(target: str, rate_limit: float = 4.0, max_pages: int = 25,
         if f["method"] == "POST" and f["fields"]:
             findings += probe_post_reflection([f], limiter)
             used += 1
+
+    # open redirects on suspiciously-named discovered params
+    if budget_left() > 0:
+        findings += check_open_redirect(surface["base"],
+                                        surface["probe_targets"], limiter)
 
     # ---- phase 4/5: dedupe + validate + refresh TM ----
     dedup = {}
