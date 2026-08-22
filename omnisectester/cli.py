@@ -79,63 +79,65 @@ def cmd_scan(opts: dict) -> dict:
     max_pages = int(opts.get("max_pages", 25))
     fail_on = str(opts.get("fail_on", "none"))
 
+    from omnisectester import compliance as _comp
+    from omnisectester import evidence as _evd
+
     if platform in ("web", "api"):
-        # v0.2: the deterministic agent loop (tm-first, crawl, probe, validate)
         from omnisectester import agent
         result = agent.run_agent(target, rate_limit=rate,
-                                 max_pages=max_pages, fail_on=fail_on,
+                                 max_pages=max_pages,
                                  auth_type=str(opts.get("auth", "none")),
                                  auth_token=opts.get("auth_token"),
-                                 include_subdomains=bool(opts.get("include_subdomains")),
+                                 include_subdomains=bool(
+                                     opts.get("include_subdomains")),
                                  exclude_patterns=opts.get("exclude"),
                                  login_url=opts.get("login_url"),
                                  login_data=opts.get("login_data"))
-        # expose gate decision so the Node CLI can mirror the exit code
-        result["gate"] = {"fail_on": fail_on,
-                          "triggered": _exit_code(result, fail_on) == 2}
     elif platform == "ai":
         from omnisectester import llm_scan
         result = llm_scan.run_llm_scan(target, rate_limit=rate,
                                        api_key=opts.get("auth_token"))
-        result["gate"] = {"fail_on": fail_on,
-                          "triggered": _exit_code(result, fail_on) == 2}
-    elif platform == "supply-chain":
+    elif platform == "extension":
+        from omnisectester import ext_scan
+        result = ext_scan.run_ext_scan(target)
+    elif platform in ("supply-chain", "cicd"):
         from omnisectester import scm_scan
         result = scm_scan.run_scm_scan(target or ".")
-        result["gate"] = {"fail_on": fail_on,
-                          "triggered": _exit_code(result, fail_on) == 2}
     elif platform == "mobile":
         from omnisectester import apk_scan
         result = apk_scan.run_apk_scan(target)
-        result["gate"] = {"fail_on": fail_on,
-                          "triggered": _exit_code(result, fail_on) == 2}
     elif platform == "desktop":
         from omnisectester import exe_scan
         result = exe_scan.run_exe_scan(target)
-        result["gate"] = {"fail_on": fail_on,
-                          "triggered": _exit_code(result, fail_on) == 2}
     elif platform == "cloud":
         from omnisectester import cloud_scan
         result = cloud_scan.run_cloud_scan(target or ".")
-        result["gate"] = {"fail_on": fail_on,
-                          "triggered": _exit_code(result, fail_on) == 2}
-        # optional LLM narrative/chaining layer - only when --llm AND key+model set.
-        # Never touches deterministic findings; lands under llm_analysis.
-        if opts.get("llm"):
-            from . import llm as llm_mod
-            try:
-                result["llm_analysis"] = llm_mod.analyze(result)
-            except Exception as exc:  # noqa: BLE001 - never break the scan
-                result["llm_analysis"] = {"ok": False, "error": str(exc)}
     else:
         result = {"command": "scan", "platform": platform, "target": target,
                   "ok": False,
-                  "error": f"engine for platform '{platform}' not yet implemented (v0.1 covers web)",
+                  "error": (f"engine for platform '{platform}' not yet "
+                            f"implemented"),
                   "findings": []}
 
+    if result.get("ok"):
+        # compliance controls + SHA-256 custody on every successful scan
+        _comp.attach(result)
+        _evd.attach(result)
+
+    result["gate"] = {"fail_on": fail_on,
+                      "triggered": _exit_code(result, fail_on) == 2}
+
+    if result.get("ok") and opts.get("llm"):
+        try:
+            from omnisectester import llm as llm_mod
+            result["llm_analysis"] = llm_mod.analyze(result)
+        except Exception as exc:  # noqa: BLE001 - never break the scan
+            result["llm_analysis"] = {"ok": False, "error": str(exc)}
+
     if result.get("ok") and fmts and output:
-        written = report_mod.write_reports(result, output, fmts.split(","))
-        result["reports"] = written
+        result["reports"] = report_mod.write_reports(result, output,
+                                                     fmts.split(","))
+
     return result
 
 
@@ -278,8 +280,37 @@ def cmd_postexploit(opts: dict) -> dict:
             **assessment}
 
 
+def cmd_redteam(opts: dict) -> dict:
+    target = opts.get("target") or opts.get("_target") or ""
+    if not opts.get("authorization"):
+        return {"command": "redteam", "ok": False,
+                "error": "authorization reference required (--authorization)"}
+    from omnisectester import redteam
+    result = redteam.run_redteam(target,
+                                 rate_limit=float(opts.get("rate_limit", 4)),
+                                 max_pages=int(opts.get("max_pages", 25)),
+                                 fail_on=str(opts.get("fail_on", "high")))
+    result["gate"] = {"fail_on": str(opts.get("fail_on", "high")),
+                      "triggered": _exit_code(result,
+                                              str(opts.get("fail_on",
+                                                           "high"))) == 2}
+    return result
+
+
+def cmd_taxonomy(opts: dict) -> dict:
+    from omnisectester import taxonomy
+    cats = taxonomy.flat()
+    domain = opts.get("domain")
+    if domain:
+        cats = [c for c in cats if c["domain"] == domain]
+    return {"command": "taxonomy", "ok": True,
+            "count": len(cats), "categories": cats}
+
+
 COMMANDS = {
     "scan": cmd_scan,
+    "redteam": cmd_redteam,
+    "taxonomy": cmd_taxonomy,
     "engage": cmd_engage,
     "threat-model": cmd_threat_model,
     "report": cmd_report,
