@@ -1,2 +1,0 @@
-[console_scripts]
-omnisectester-core = omnisectester.cli:main

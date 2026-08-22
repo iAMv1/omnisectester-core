@@ -1,3 +1,7 @@
 pyvenv.cfg
 __pycache__/
 .omnisectester/
+
+*.egg-info/
+dist/
+build/
