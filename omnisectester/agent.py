@@ -57,7 +57,8 @@ def _headers_on_page(page_url: str, limiter, header_miss_counter: dict) -> None:
 
 def run_agent(target: str, rate_limit: float = 4.0, max_pages: int = 25,
               fail_on: str = "none", budget: int = DEFAULT_BUDGET,
-              auth_type: str = "none", auth_token=None) -> dict:
+              auth_type: str = "none", auth_token=None,
+              include_subdomains: bool = False, exclude_patterns=None) -> dict:
     limiter = httpc.RateLimiter(rate_limit)
     if auth_type != "none" and auth_token:
         httpc.set_auth(auth_type, auth_token)
@@ -66,7 +67,9 @@ def run_agent(target: str, rate_limit: float = 4.0, max_pages: int = 25,
     tm = build_threat_model(target)
 
     # ---- phase 2: crawl ----
-    surface = crawler_mod.crawl(target, max_pages=max_pages, rate_limit=rate_limit)
+    surface = crawler_mod.crawl(target, max_pages=max_pages, rate_limit=rate_limit,
+                                include_subdomains=include_subdomains,
+                                exclude_patterns=exclude_patterns)
 
     # ---- phase 3: probe (budget-aware) ----
     findings = []

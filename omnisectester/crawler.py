@@ -25,12 +25,22 @@ def _same_origin(url, base_netloc):
         return False
 
 
-def crawl(seed_url: str, max_pages: int = 25, rate_limit: float = 4.0) -> dict:
-    """BFS crawl within origin. Returns an attack-surface map."""
+def crawl(seed_url: str, max_pages: int = 25, rate_limit: float = 4.0,
+          include_subdomains: bool = False, exclude_patterns=None) -> dict:
+    """BFS crawl within scope. Returns an attack-surface map.
+
+    Scope: same-host by default; include_subdomains widens to *.netloc.
+    exclude_patterns: list of regex strings - matching URLs are skipped.
+    """
     parsed = urlparse(seed_url if "://" in seed_url else f"https://{seed_url}")
     base = f"{parsed.scheme}://{parsed.netloc}"
-    netloc = parsed.netloc
+    netloc = parsed.netloc.lower()
+    excludes = [re.compile(p, re.I) for p in (exclude_patterns or [])]
 
+    def in_scope(url: str) -> bool:
+        host = urlparse(url).netloc.lower()
+        ok_host = host == netloc or (include_subdomains and host.endswith("." + netloc))
+        return ok_host and not any(x.search(url) for x in excludes)
     limiter = httpc.RateLimiter(rate_limit)
     queue = deque([base + (parsed.path or "/")])
     seen = set()
@@ -60,7 +70,7 @@ def crawl(seed_url: str, max_pages: int = 25, rate_limit: float = 4.0) -> dict:
 
         for href in LINK_RE.findall(body):
             absolute = urljoin(norm, href.split("#")[0])
-            if _same_origin(absolute, netloc) and absolute not in seen:
+            if in_scope(absolute) and absolute not in seen:
                 queue.append(absolute)
 
         for fm in FORM_RE.finditer(body):

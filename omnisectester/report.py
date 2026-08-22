@@ -39,11 +39,16 @@ def to_html(result: dict) -> str:
     rows = []
     for f in result.get("findings") or []:
         color = SEV_COLOR.get(f["severity"], "#757575")
+        poc = ""
+        if f.get("poc"):
+            poc = (f"<div style='margin-top:6px;background:#111;color:#0f0;"
+                   f"padding:8px;font-family:monospace;font-size:12px;'>"
+                   f"$ {html.escape(f['poc'])}</div>")
         rows.append(
             f"<tr><td><span style='color:{color};font-weight:bold'>"
             f"{html.escape(f['severity'].upper())}</span></td>"
             f"<td>{html.escape(f['id'])}</td>"
-            f"<td>{html.escape(f['title'])}<br><small>{html.escape(f['evidence'])}</small></td>"
+            f"<td>{html.escape(f['title'])}<br><small>{html.escape(f['evidence'])}</small>{poc}</td>"
             f"<td>{html.escape(f['remediation'])}</td></tr>")
     body = ("\n".join(rows)) or "<tr><td colspan=4>No findings</td></tr>"
     return f"""<!doctype html><html><head><meta charset="utf-8">

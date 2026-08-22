@@ -84,7 +84,9 @@ def cmd_scan(opts: dict) -> dict:
         result = agent.run_agent(target, rate_limit=rate,
                                  max_pages=max_pages, fail_on=fail_on,
                                  auth_type=str(opts.get("auth", "none")),
-                                 auth_token=opts.get("auth_token"))
+                                 auth_token=opts.get("auth_token"),
+                                 include_subdomains=bool(opts.get("include_subdomains")),
+                                 exclude_patterns=opts.get("exclude"))
         # expose gate decision so the Node CLI can mirror the exit code
         result["gate"] = {"fail_on": fail_on,
                           "triggered": _exit_code(result, fail_on) == 2}

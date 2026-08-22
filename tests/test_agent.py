@@ -88,6 +88,24 @@ class TestAgent(unittest.TestCase):
         resp = httpc.request(self.fix.url + "/authecho")
         self.assertNotIn("Bearer tok123", resp.get("body", ""), "auth not cleared")
 
+    def test_crawler_scope_exclude_and_subdomains(self):
+        surface = crawler.crawl(self.fix.url, max_pages=10, rate_limit=50,
+                                exclude_patterns=[r"/about"])
+        paths = " ".join(p["url"] for p in surface["pages"])
+        self.assertNotIn("/about", paths, "excluded path was crawled")
+        self.assertIn("/search", paths)
+        s2 = crawler.crawl(self.fix.url, max_pages=10, rate_limit=50,
+                           include_subdomains=True)
+        self.assertGreaterEqual(s2["stats"]["pages_crawled"], 3)
+
+    def test_report_html_contains_poc_block(self):
+        result = agent.run_agent(self.fix.url, rate_limit=50, budget=80)
+        from omnisectester.report import to_html
+        html_out = to_html(result)
+        if [f for f in result["findings"] if f.get("poc")]:
+            self.assertIn("$ curl", html_out)
+            self.assertIn("omni_probe7x", html_out)
+
     def test_budget_is_respected(self):
         tight = agent.run_agent(self.fix.url, rate_limit=50, budget=5)
         self.assertLessEqual(tight["agent"]["requests_used"], 7)  # small slack
