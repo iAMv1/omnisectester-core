@@ -15,8 +15,8 @@ from urllib.parse import urlparse
 
 from . import crawler as crawler_mod
 from . import httpc
-from .scanner import (_finding, _sort, check_paths, check_tls,
-                      SECURITY_HEADERS)
+from .scanner import (_finding, _sort, check_paths, check_tls, check_post_forms,
+                      probe_post_reflection, SECURITY_HEADERS)
 from .threatmodel import build_threat_model
 
 DEFAULT_BUDGET = 60          # max total HTTP requests for the whole agent run
@@ -56,8 +56,11 @@ def _headers_on_page(page_url: str, limiter, header_miss_counter: dict) -> None:
 
 
 def run_agent(target: str, rate_limit: float = 4.0, max_pages: int = 25,
-              fail_on: str = "none", budget: int = DEFAULT_BUDGET) -> dict:
+              fail_on: str = "none", budget: int = DEFAULT_BUDGET,
+              auth_type: str = "none", auth_token=None) -> dict:
     limiter = httpc.RateLimiter(rate_limit)
+    if auth_type != "none" and auth_token:
+        httpc.set_auth(auth_type, auth_token)
 
     # ---- phase 1: threat model BEFORE any testing (project promise) ----
     tm = build_threat_model(target)
@@ -118,6 +121,15 @@ def run_agent(target: str, rate_limit: float = 4.0, max_pages: int = 25,
     # sensitive paths still worth checking once
     if budget_left() > 0:
         findings += check_paths(surface["base"], limiter)
+
+    # POST forms: CSRF/plaintext audit + authenticated reflection probe
+    findings += check_post_forms(surface["forms"], surface["base"])
+    for f in surface["forms"]:
+        if budget_left() <= 0:
+            break
+        if f["method"] == "POST" and f["fields"]:
+            findings += probe_post_reflection([f], limiter)
+            used += 1
 
     # ---- phase 4/5: dedupe + validate + refresh TM ----
     dedup = {}

@@ -47,6 +47,7 @@ COMMON_PATHS = [
 
 XSS_PROBE = "<script>omni_probe()</script>"
 XSS_MARKER = "omni_probe"
+REFLECTION_MARKER = "omni_probe7x"
 
 
 def _finding(fid, title, severity, evidence, cwe, remediation):
@@ -172,3 +173,50 @@ def scan_web(target: str, rate_limit: float = 1.0) -> dict:
                   "high": sum(1 for f in findings if f["severity"] == "high"),
                   "total": len(findings)},
     }
+
+
+def check_post_forms(forms: list, base_url: str) -> list:
+    """Static POST-form audit: CSRF presence + transport security."""
+    found = []
+    for f in forms:
+        if f["method"] != "POST":
+            continue
+        action = f["action"] or base_url
+        if action.startswith("http://"):
+            found.append(_finding(
+                "T003", "Form submits over plaintext HTTP", "high",
+                f"POST {action} (fields: {', '.join(f['fields'][:5]) or 'n/a'})",
+                "CWE-319", "Serve the form and its action endpoint over HTTPS."))
+        if f["fields"] and not any(re.search(r"csrf|token|nonce|_token", x, re.I)
+                                   for x in f["fields"]):
+            found.append(_finding(
+                "F001", "POST form without CSRF token", "medium",
+                f"POST {action} fields={f['fields']}", "CWE-352",
+                "Add per-session CSRF tokens and verify server-side."))
+    return found
+
+
+def probe_post_reflection(forms: list, limiter) -> list:
+    """Submit marker into the first field of each POST form; flag verbatim
+    reflection with a curl PoC."""
+    from urllib.parse import urlencode
+    found = []
+    for f in forms:
+        if f["method"] != "POST" or not f["fields"]:
+            continue
+        data = urlencode({f["fields"][0]: f"<script>{REFLECTION_MARKER}</script>"})
+        limiter.wait()
+        resp = httpc.request(f["action"], method="POST", data=data.encode(),
+                             headers={"Content-Type": "application/x-www-form-urlencoded"})
+        if resp.get("ok") and REFLECTION_MARKER in resp.get("body", "") \
+                and f"<script>{REFLECTION_MARKER}" in resp["body"]:
+            finding = _finding(
+                "X002", f"Reflected XSS via POST `{f['fields'][0]}`", "high",
+                "POST body value echoed verbatim.", "CWE-79",
+                "Encode on output; validate input; consider SameSite+CSRF.")
+            finding["poc"] = (
+                f"curl -s -X POST '{f['action']}' "
+                f"-d '{data}' | grep -F '{REFLECTION_MARKER}'")
+            finding["url"] = f["action"]
+            found.append(finding)
+    return found

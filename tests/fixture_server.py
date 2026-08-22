@@ -16,6 +16,7 @@ PAGE = """<html><head><title>fixture</title></head><body>
 <a href="/search">search</a>
 <a href="/about">about</a>
 <form action="/search" method="get"><input name="q"></form>
+<form action="/login" method="post"><input name="username"><input name="password"></form>
 </body></html>"""
 SEARCH_PAGE = "<html><body>results for [{}]</body></html>"
 ABOUT_PAGE = "<html><body>about us</body></html>"
@@ -33,6 +34,17 @@ class FixtureHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    def do_POST(self):
+        from urllib.parse import parse_qs
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode()
+        fields = parse_qs(body, keep_blank_values=True)
+        if self.path == "/login":
+            user = fields.get("username", [""])[0]
+            self._send(200, f"<html>welcome back {user}</html>")
+        else:
+            self._send(404, "no post")
+
     def do_GET(self):
         from urllib.parse import urlparse, parse_qs, urlencode
         path = self.path.split("?")[0]
@@ -44,6 +56,9 @@ class FixtureHandler(BaseHTTPRequestHandler):
             self._send(200, SEARCH_PAGE.format(q))
         elif path == "/about":
             self._send(200, ABOUT_PAGE)
+        elif path == "/authecho":
+            auth = self.headers.get("Authorization", "(none)")
+            self._send(200, f"auth=[{auth}]")
         elif path == "/.env":
             self._send(200, "SECRET_KEY=abc123\nDB_PASSWORD=hunter2\n")
         elif path == "/robots.txt":

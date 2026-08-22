@@ -50,11 +50,37 @@ def tls_info(host: str, port: int = 443, timeout: float = 8.0) -> dict:
     return result
 
 
+# Session-wide auth headers (set once by the agent from CLI flags).
+_default_headers: dict = {}
+
+
+def set_auth(auth_type: str = "none", token=None):
+    """Configure auth headers from CLI flags.
+
+    bearer <token>   -> Authorization: Bearer <token>
+    basic  <u:p>     -> Authorization: Basic base64(u:p)
+    cookie <value>   -> Cookie: <value>
+    header <H: V>    -> sent verbatim
+    """
+    global _default_headers
+    _default_headers = {}
+    if auth_type == "bearer" and token:
+        _default_headers["Authorization"] = f"Bearer {token}"
+    elif auth_type == "basic" and token:
+        import base64
+        _default_headers["Authorization"] = "Basic " + base64.b64encode(str(token).encode()).decode()
+    elif auth_type == "cookie" and token:
+        _default_headers["Cookie"] = str(token)
+    elif auth_type == "header" and token and ":" in str(token):
+        name, _, value = str(token).partition(":")
+        _default_headers[name.strip()] = value.strip()
+
+
 def request(url: str, method: str = "GET", headers: dict | None = None,
-            timeout: float = 10.0) -> dict:
+            timeout: float = 10.0, data=None) -> dict:
     """Perform one HTTP request and normalize the response into a dict."""
-    req = urllib.request.Request(url, method=method, headers=headers or {},
-                                 data=None)
+    merged = {**_default_headers, **(headers or {})}
+    req = urllib.request.Request(url, method=method, headers=merged, data=data)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = resp.read(262144).decode("utf-8", errors="replace")

@@ -68,6 +68,26 @@ class TestAgent(unittest.TestCase):
         crit = [f for f in result["findings"] if f["severity"] == "critical"]
         self.assertTrue(any(f["id"] == "P001" for f in crit))
 
+    def test_post_form_audit_and_reflection(self):
+        result = agent.run_agent(self.fix.url, rate_limit=50, budget=80)
+        ids = [f["id"] for f in result["findings"]]
+        self.assertIn("F001", ids, "missing-CSRF finding absent")
+        x2 = [f for f in result["findings"] if f["id"] == "X002"]
+        self.assertTrue(x2, "POST reflection probe did not fire")
+        self.assertIn("curl -s -X POST", x2[0]["poc"])
+
+    def test_auth_headers_reach_target(self):
+        from omnisectester import httpc
+        httpc.set_auth("bearer", "tok123")
+        try:
+            resp = httpc.request(self.fix.url + "/authecho")
+            self.assertIn("Bearer tok123", resp.get("body", ""),
+                          "auth header did not reach the target")
+        finally:
+            httpc.set_auth("none")
+        resp = httpc.request(self.fix.url + "/authecho")
+        self.assertNotIn("Bearer tok123", resp.get("body", ""), "auth not cleared")
+
     def test_budget_is_respected(self):
         tight = agent.run_agent(self.fix.url, rate_limit=50, budget=5)
         self.assertLessEqual(tight["agent"]["requests_used"], 7)  # small slack
