@@ -1,4 +1,3 @@
-"""omnisectester-core: stdlib-only scanning engine behind the omnisectester CLI."""
+"""omnisectester-core engine."""
 
-__version__ = "0.7.0"
-
+__version__ = "1.6.0"
