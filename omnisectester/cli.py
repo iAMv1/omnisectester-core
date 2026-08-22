@@ -21,10 +21,12 @@ from pathlib import Path
 try:
     from . import report as report_mod
     from . import scanner, sbom, threatmodel
+    from .scanner import FAIL_ON_RANK, SEVERITY_ORDER
 except ImportError:  # pragma: no cover - script-mode branch
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from omnisectester import report as report_mod  # noqa: E402
     from omnisectester import scanner, sbom, threatmodel  # noqa: E402
+    from omnisectester.scanner import FAIL_ON_RANK, SEVERITY_ORDER  # noqa: E402
 
 
 def _emit(obj: dict) -> None:
@@ -146,6 +148,23 @@ COMMANDS = {
 }
 
 
+def _exit_code(result: dict, fail_on: str = "none") -> int:
+    """0 = clean run; 2 = ran fine but findings met the fail-on threshold;
+    1 = the scan itself failed."""
+    if not result.get("ok"):
+        return 1
+    if fail_on not in FAIL_ON_RANK or fail_on == "none":
+        return 0
+    threshold = FAIL_ON_RANK[fail_on]
+    worst = 99
+    for f in result.get("findings", []):
+        rank = SEVERITY_ORDER.get(f["severity"], 4)
+        if rank < worst:
+            worst = rank
+    has_findings = bool(result.get("findings"))
+    return 2 if has_findings and worst <= threshold else 0
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
@@ -173,8 +192,9 @@ def main(argv=None) -> int:
         result = handler(opts)
         if not isinstance(result, dict) or "ok" not in result:
             result = {"ok": True, "result": result}
+        exit_code = _exit_code(result, str(opts.get("fail_on", "none")))
         _emit(result)
-        return 0 if result.get("ok") else 1
+        return exit_code
     except Exception as exc:  # noqa: BLE001 - bridge expects JSON errors
         _emit({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
         return 1

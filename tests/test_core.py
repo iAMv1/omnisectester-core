@@ -88,6 +88,17 @@ class TestCliContract(unittest.TestCase):
         self.assertTrue(out["ok"])
         self.assertGreater(out["stats"]["total"], 3)
 
+    def test_fail_on_gate_exit_codes(self):
+        # fixture always yields criticals -> --fail-on critical must exit 2
+        code, out = self._run(["scan", "--json", "--platform", "web",
+                               "--target", self.fix.url, "--rate-limit", "50",
+                               "--fail-on", "critical"])
+        self.assertEqual(code, 2, "critical findings should produce exit 2")
+        # without the flag: informational success
+        code, out = self._run(["scan", "--json", "--platform", "web",
+                               "--target", self.fix.url, "--rate-limit", "50"])
+        self.assertEqual(code, 0)
+
     def test_unknown_command_exits_1_with_json(self):
         code, out = self._run(["nope", "--json"])
         self.assertEqual(code, 1)

@@ -14,6 +14,11 @@ from . import httpc
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 
+# Exit-code gate: severities at/above this level trigger exit 2 (findings
+# found) rather than 0. Mirrors Strix-style CI semantics: a scan that
+# succeeded but found criticals must fail the pipeline.
+FAIL_ON_RANK = {"none": 99, "info": 4, "low": 3, "medium": 2, "high": 1, "critical": 0}
+
 SECURITY_HEADERS = [
     ("strict-transport-security", "high", "H001",
      "Missing Strict-Transport-Security (HSTS)", "CWE-319",
