@@ -98,11 +98,16 @@ def to_sarif(result: dict) -> str:
     })
 
 
+SUPPORTED_FORMATS = ["json", "md", "html", "sarif"]
+
+
 def write_reports(result: dict, output_dir: str, formats: list) -> list:
-    """Write report files; returns list of written paths."""
+    """Write report files; returns list of written paths. Unsupported
+    formats are surfaced on the result instead of being silently dropped."""
     os.makedirs(output_dir, exist_ok=True)
     stem = f"omnisec-report-{time.strftime('%Y%m%d-%H%M%S')}"
     written = []
+    unsupported = []
     for fmt in formats:
         path = os.path.join(output_dir, f"{stem}.{fmt}")
         if fmt == "json":
@@ -114,8 +119,13 @@ def write_reports(result: dict, output_dir: str, formats: list) -> list:
         elif fmt == "sarif":
             content = to_sarif(result)
         else:
+            if fmt not in unsupported:
+                unsupported.append(fmt)
             continue
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(content)
         written.append(path)
+    if unsupported:
+        result["unsupported_formats"] = unsupported
+        result["supported_formats"] = SUPPORTED_FORMATS
     return written
