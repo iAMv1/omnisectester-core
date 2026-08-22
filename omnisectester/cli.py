@@ -90,6 +90,14 @@ def cmd_scan(opts: dict) -> dict:
         # expose gate decision so the Node CLI can mirror the exit code
         result["gate"] = {"fail_on": fail_on,
                           "triggered": _exit_code(result, fail_on) == 2}
+        # optional LLM narrative/chaining layer - only when --llm AND key+model set.
+        # Never touches deterministic findings; lands under llm_analysis.
+        if opts.get("llm"):
+            from . import llm as llm_mod
+            try:
+                result["llm_analysis"] = llm_mod.analyze(result)
+            except Exception as exc:  # noqa: BLE001 - never break the scan
+                result["llm_analysis"] = {"ok": False, "error": str(exc)}
     else:
         result = {"command": "scan", "platform": platform, "target": target,
                   "ok": False,
