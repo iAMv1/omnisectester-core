@@ -125,6 +125,41 @@ class TestAgent(unittest.TestCase):
         self.assertTrue(warns, "budget exhaustion not reported")
 
 
+class TestOsvBatch(unittest.TestCase):
+    def test_batch_mocked_single_roundtrip(self):
+        calls = []
+
+        def fake_post(req, timeout=0):
+            calls.append(req.full_url)
+            payload = json.loads(req.data)
+            results = [{"vulns": [{"id": f"OSV-{i}"}]} for _ in payload["queries"]]
+            body = json.dumps({"results": results}).encode()
+
+            class R:
+                def read(self):
+                    return body
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *a):
+                    return None
+            return R()
+
+        import urllib.request
+        orig = urllib.request.urlopen
+        urllib.request.urlopen = fake_post
+        try:
+            comps = [{"name": f"p{i}", "version": "1.0", "bom-ref": f"r{i}",
+                      "purl": f"pkg:npm/p{i}@1.0"} for i in range(5)]
+            vulns, errors = osv.enrich_components(comps, "npm", batch=True)
+            self.assertEqual(errors, [])
+            self.assertGreaterEqual(len(vulns), 5)
+            self.assertEqual(len(calls), 1, "batch should be ONE request")
+        finally:
+            urllib.request.urlopen = orig
+
+
 class TestOsv(unittest.TestCase):
     def test_enrich_uses_mocked_response(self):
         fake = [{"id": "GHSA-xxxx-yyyy-zzzz", "aliases": ["CVE-2023-1111"],
@@ -134,7 +169,7 @@ class TestOsv(unittest.TestCase):
         try:
             comps = [{"name": "widget", "version": "1.0.0", "bom-ref": "r1",
                       "purl": "pkg:npm/widget@1.0.0"}]
-            vulns, errors = osv.enrich_components(comps, "npm")
+            vulns, errors = osv.enrich_components(comps, "npm", batch=False)
             self.assertEqual(len(errors), 0)
             self.assertEqual(vulns[0]["aliases"], ["CVE-2023-1111"])
             self.assertEqual(vulns[0]["affected"][0]["package"], "widget")
@@ -147,7 +182,7 @@ class TestOsv(unittest.TestCase):
         try:
             comps = [{"name": "w", "version": "1", "bom-ref": "r",
                       "purl": "pkg:npm/w@1"}]
-            vulns, errors = osv.enrich_components(comps, "npm")
+            vulns, errors = osv.enrich_components(comps, "npm", batch=False)
             self.assertEqual(vulns, [])
             self.assertIn("network down", errors[0])
         finally:
