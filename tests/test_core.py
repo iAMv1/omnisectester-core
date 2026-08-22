@@ -99,6 +99,24 @@ class TestCliContract(unittest.TestCase):
                                "--target", self.fix.url, "--rate-limit", "50"])
         self.assertEqual(code, 0)
 
+    def test_continuous_diffs_against_state(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td) / "state.json"
+            with FixtureServer() as fix:
+                # seed previous state with ALL current ids -> nothing new
+                code, out = self._run(["scan", "--json", "--platform", "web",
+                                       "--target", fix.url, "--rate-limit", "50"])
+                ids = [f"{f['id']}::{f['title']}" for f in out["findings"]]
+                state.write_text(json.dumps({fix.url: ids}))
+                code, out = self._run(["continuous", "--json",
+                                       "--targets", fix.url,
+                                       "--state", str(state),
+                                       "--rate-limit", "50"])
+            self.assertEqual(code, 0)
+            self.assertEqual(out["new_findings"], 0)
+            self.assertEqual(out["results"][0]["new"], 0)
+
     def test_unknown_command_exits_1_with_json(self):
         code, out = self._run(["nope", "--json"])
         self.assertEqual(code, 1)

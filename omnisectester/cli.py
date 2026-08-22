@@ -12,6 +12,7 @@ Guarantees:
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -178,9 +179,61 @@ def cmd_sbom(opts: dict) -> dict:
 
 
 def cmd_continuous(opts: dict) -> dict:
-    return {"command": "continuous", "ok": False,
-            "error": "scheduled continuous mode requires a scheduler host; "
-                     "use ci-scan style invocation of scan instead (v0.1)"}
+    """Deterministic continuous mode: scan targets, diff finding-IDs against
+    the previous run's state file, report only what's NEW."""
+    import json as _json
+
+    targets = [t.strip() for t in (opts.get("targets") or "").split(",") if t.strip()]
+    if not targets:
+        return {"command": "continuous", "ok": False,
+                "error": "no targets given (--targets a,b,c)"}
+
+    state_path = os.path.expanduser(
+        opts.get("state", "~/.omnisectester/continuous-state.json"))
+    fail_on = str(opts.get("fail_on", "none"))
+    max_pages = int(opts.get("max_pages", 25))
+    rate = float(opts.get("rate_limit", 4))
+
+    from omnisectester import agent
+
+    try:
+        with open(state_path, encoding="utf-8") as fh:
+            prev_state = _json.load(fh)
+    except Exception:  # noqa: BLE001 - missing/corrupt state starts fresh
+        prev_state = {}
+
+    results = []
+    all_findings = []
+    new_total = 0
+    requests_used = 0
+    for target in targets:
+        scan_result = agent.run_agent(target, rate_limit=rate,
+                                      max_pages=max_pages)
+        requests_used += scan_result.get("stats", {}).get("requests", 0)
+        ids = {f"{f['id']}::{f['title']}" for f in scan_result.get("findings", [])}
+        prev_ids = set(prev_state.get(target, []))
+        fresh = sorted(ids - prev_ids)
+        new_total += len(fresh)
+        prev_state[target] = sorted(ids)
+        results.append({"target": target,
+                        "ok": scan_result.get("ok", False),
+                        "total": len(ids), "new": len(fresh),
+                        "new_ids": fresh[:10]})
+        all_findings += scan_result.get("findings", [])
+
+    os.makedirs(os.path.dirname(state_path), exist_ok=True)
+    with open(state_path, "w", encoding="utf-8") as fh:
+        _json.dump(prev_state, fh)
+
+    aggregate = {"ok": True, "findings": all_findings}
+    return {
+        "command": "continuous", "ok": True,
+        "results": results,
+        "new_findings": new_total,
+        "gate": {"fail_on": fail_on,
+                 "triggered": _exit_code(aggregate, fail_on) == 2},
+        "stats": {"targets": len(targets), "requests": requests_used},
+    }
 
 
 COMMANDS = {
