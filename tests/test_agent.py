@@ -130,6 +130,15 @@ class TestAgent(unittest.TestCase):
         self.assertTrue(r1, f"open redirect not detected: {result['surface']}")
         self.assertIn("curl -sI", r1[0]["poc"])
 
+    def test_cert_expiry_math(self):
+        from omnisectester.scanner import _cert_days_remaining
+        days, err = _cert_days_remaining("Mar 12 23:59:59 2099 GMT")
+        self.assertIsNone(err)
+        self.assertGreater(days, 10000)
+        days, err = _cert_days_remaining("garbage-date")
+        self.assertIsNone(days)
+        self.assertIn("unparseable", err)
+
     def test_sarif_output_structure(self):
         result = agent.run_agent(self.fix.url, rate_limit=50, budget=80)
         from omnisectester.report import to_sarif

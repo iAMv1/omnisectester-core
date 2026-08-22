@@ -74,6 +74,20 @@ def check_headers(resp) -> list:
     return found
 
 
+def _cert_days_remaining(not_after: str):
+    """Parse SSL 'Mar 12 23:59:59 2027 GMT' style dates -> (days, error)."""
+    from datetime import datetime, timezone
+    for fmt in ("%b %d %H:%M:%S %Y %Z", "%b %d %H:%M:%S %Y GMT",
+                "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            expiry = datetime.strptime(not_after.strip(), fmt).replace(
+                tzinfo=timezone.utc)
+            return (expiry - datetime.now(timezone.utc)).days, None
+        except ValueError:
+            continue
+    return None, f"unparseable date: {not_after}"
+
+
 def check_tls(host: str) -> list:
     parsed_host = host.split(":")[0]
     info = httpc.tls_info(parsed_host)
@@ -85,10 +99,28 @@ def check_tls(host: str) -> list:
         found.append(_finding("T001", f"Weak TLS protocol {proto}", "high",
                               f"Negotiated {proto}.", "CWE-327",
                               "Disable TLS < 1.2; prefer TLS 1.3."))
-    if info.get("not_after"):
-        found.append(_finding("I002", "TLS certificate present", "info",
-                              f"notAfter={info['not_after']}, issuer={info.get('issuer', {}).get('organizationName', '?')}",
-                              "CWE-000", "No action - informational."))
+    not_after = info.get("not_after")
+    if not_after:
+        days_left, parse_err = _cert_days_remaining(not_after)
+        if parse_err is None:
+            if days_left < 0:
+                found.append(_finding("T005", "TLS certificate EXPIRED", "critical",
+                                      f"Expired {-days_left} days ago ({not_after}).",
+                                      "CWE-298", "Renew the certificate immediately."))
+            elif days_left <= 30:
+                sev = "high" if days_left <= 14 else "medium"
+                found.append(_finding("T004", f"TLS cert expires in {days_left} days",
+                                      sev, f"notAfter={not_after}.", "CWE-298",
+                                      "Renew the certificate."))
+            else:
+                found.append(_finding("I002", "TLS certificate valid", "info",
+                                      f"Expires in {days_left} days ({not_after}).",
+                                      "CWE-000", "No action - informational."))
+        else:
+            found.append(_finding("I002", "TLS certificate present", "info",
+                                  f"notAfter={not_after} (issuer "
+                                  f"{info.get('issuer', {}).get('organizationName', '?')}).",
+                                  "CWE-000", "No action - informational."))
     return found
 
 
