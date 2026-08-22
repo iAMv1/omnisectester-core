@@ -70,6 +70,33 @@ def _coerce(value: str):
             return value
 
 
+SEVERITIES = ("critical", "high", "medium", "low", "info")
+
+
+def _apply_suppress(result: dict, spec) -> None:
+    """Drop findings whose rule id is listed in `spec` (comma-separated).
+
+    Recomputes stats so gates/reports reflect the reported set, and records
+    what was suppressed for auditability. Runs BEFORE compliance/custody
+    attachment so evidence hashes match the final finding list.
+    """
+    if not spec:
+        return
+    ids = {s.strip() for s in str(spec).split(",") if s.strip()}
+    if not ids or not result.get("ok"):
+        return
+    findings = result.get("findings", [])
+    kept = [f for f in findings if f.get("id") not in ids]
+    dropped = len(findings) - len(kept)
+    if dropped:
+        result["findings"] = kept
+        stats = result.setdefault("stats", {})
+        stats["total"] = len(kept)
+        stats.update({s: sum(1 for f in kept if f.get("severity") == s)
+                      for s in SEVERITIES})
+    result["suppressed"] = {"ids": sorted(ids), "count": dropped}
+
+
 def cmd_scan(opts: dict) -> dict:
     platform = opts.get("platform", "web")
     target = opts.get("target") or opts.get("_target") or ""
@@ -118,6 +145,8 @@ def cmd_scan(opts: dict) -> dict:
                   "error": (f"engine for platform '{platform}' not yet "
                             f"implemented"),
                   "findings": []}
+
+    _apply_suppress(result, opts.get("suppress"))
 
     if result.get("ok"):
         # compliance controls + SHA-256 custody on every successful scan
