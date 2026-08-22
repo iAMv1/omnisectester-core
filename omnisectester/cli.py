@@ -83,6 +83,9 @@ def cmd_scan(opts: dict) -> dict:
         from . import agent
         result = agent.run_agent(target, rate_limit=rate,
                                  max_pages=max_pages, fail_on=fail_on)
+        # expose gate decision so the Node CLI can mirror the exit code
+        result["gate"] = {"fail_on": fail_on,
+                          "triggered": _exit_code(result, fail_on) == 2}
     else:
         result = {"command": "scan", "platform": platform, "target": target,
                   "ok": False,
@@ -97,7 +100,7 @@ def cmd_scan(opts: dict) -> dict:
 
 def cmd_engage(opts: dict) -> dict:
     target = opts.get("target") or opts.get("_target") or ""
-    from . import agent
+    from omnisectester import agent
     scan_result = agent.run_agent(target, rate_limit=float(opts.get("rate_limit", 4)),
                                   max_pages=int(opts.get("max_pages", 25)))
     # threat model already ran first INSIDE the agent; reuse it
@@ -137,7 +140,7 @@ def cmd_sbom(opts: dict) -> dict:
     result = sbom.generate_sbom(root, include_vulns=bool(opts.get("vulns")))
     if opts.get("vulns") and result.get("ok"):
         # real vulnerability matching via OSV.dev (free, keyless)
-        from . import osv
+        from omnisectester import osv
         all_vulns = []
         errors = []
         for eco in ("pypi", "npm"):
