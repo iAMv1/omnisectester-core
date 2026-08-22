@@ -104,6 +104,11 @@ def cmd_scan(opts: dict) -> dict:
         result = scm_scan.run_scm_scan(target or ".")
         result["gate"] = {"fail_on": fail_on,
                           "triggered": _exit_code(result, fail_on) == 2}
+    elif platform == "mobile":
+        from omnisectester import apk_scan
+        result = apk_scan.run_apk_scan(target)
+        result["gate"] = {"fail_on": fail_on,
+                          "triggered": _exit_code(result, fail_on) == 2}
         # optional LLM narrative/chaining layer - only when --llm AND key+model set.
         # Never touches deterministic findings; lands under llm_analysis.
         if opts.get("llm"):
