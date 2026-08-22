@@ -41,9 +41,25 @@ SECURITY_HEADERS = [
 ]
 
 COMMON_PATHS = [
-    "/robots.txt", "/sitemap.xml", "/.env", "/.git/config", "/backup.zip",
+    "/.env", "/.git/config", "/backup.zip",
     "/admin", "/phpinfo.php", "/wp-login.php", "/.DS_Store", "/server-status",
 ]
+
+# Content signatures: a 200 alone proves nothing on SPAs whose catch-all
+# route serves the app shell for every path (measured on Juice Shop:
+# /.env, /backup.zip, /phpinfo.php all returned the same index.html).
+# A path counts as exposed only if the body differs from that shell AND
+# matches the artifact's expected content signature.
+PATH_SIGNATURES = {
+    "/.env": re.compile(r"^[A-Za-z_][A-Za-z0-9_]{2,}\s*=", re.M),
+    "/.git/config": re.compile(r"\[core\]"),
+    "/admin": re.compile(r"<title>|login|dashboard|sign in|administrator", re.I),
+    "/phpinfo.php": re.compile(r"phpinfo\(\)|PHP Version", re.I),
+    "/wp-login.php": re.compile(r"wp-admin|user_login|wordpress", re.I),
+    "/server-status": re.compile(
+        r"Apache Server Status|Server uptime|Server Version", re.I),
+}
+BINARY_PATHS = {"/backup.zip", "/.DS_Store"}
 
 XSS_PROBE = "<script>omni_probe()</script>"
 XSS_MARKER = "omni_probe"
@@ -124,18 +140,56 @@ def check_tls(host: str) -> list:
     return found
 
 
+def _catch_all_baseline(base_url: str, limiter) -> int | None:
+    """Length of the SPA/app-shell body served for nonexistent paths.
+    Returns None when the server 404s random paths (no catch-all)."""
+    from uuid import uuid4
+    nonce = f"/omnisectester-baseline-{uuid4().hex[:12]}"
+    limiter.wait()
+    resp = httpc.request(base_url.rstrip("/") + nonce)
+    if resp.get("ok") and resp.get("status") == 200:
+        return len(resp.get("body", ""))
+    return None
+
+
 def check_paths(base_url: str, limiter) -> list:
     found = []
+    baseline_len = _catch_all_baseline(base_url, limiter)
     for path in COMMON_PATHS:
         limiter.wait()
         resp = httpc.request(base_url.rstrip("/") + path)
-        if resp.get("ok") and resp.get("status") == 200 and len(resp.get("body", "")) > 0:
-            sev = "critical" if any(p in path for p in ("/.env", "/.git/", "backup")) else "medium"
-            fid = "P001" if sev == "critical" else "P002"
-            found.append(_finding(
-                fid, f"Sensitive path exposed: {path}", sev,
-                f"GET {path} -> 200 with {len(resp['body'])} bytes.", "CWE-538",
-                "Remove or deny access to internal/backup paths at the edge."))
+        if not (resp.get("ok") and resp.get("status") == 200):
+            continue
+        body = resp.get("body", "")
+        if not body:
+            continue
+        # Catch-all filter: same-size shell as a random nonce path.
+        if baseline_len is not None and abs(len(body) - baseline_len) <= max(
+                64, int(0.05 * baseline_len)):
+            continue
+        looks_html = bool(re.search(
+            r"<html|<!doctype html", body[:512], re.I))
+        if path in BINARY_PATHS:
+            # Backup/archive artifacts must not arrive as an HTML shell,
+            # and zip archives must carry the PK magic.
+            if looks_html:
+                continue
+            if path == "/backup.zip" and "PK\x03\x04" not in body:
+                continue
+        else:
+            sig = PATH_SIGNATURES.get(path)
+            if sig is not None and not sig.search(body):
+                continue
+            if sig is None and looks_html and path not in ("/admin",):
+                # Unsignatured text artifacts served as HTML are suspect.
+                continue
+        sev = "critical" if any(p in path for p in ("/.env", "/.git/", "backup")) else "medium"
+        fid = "P001" if sev == "critical" else "P002"
+        found.append(_finding(
+            fid, f"Sensitive path exposed: {path}", sev,
+            f"GET {path} -> 200 with {len(body)} bytes (content signature "
+            f"matched; differs from app shell).", "CWE-538",
+            "Remove or deny access to internal/backup paths at the edge."))
     return found
 
 
