@@ -8,6 +8,7 @@ Serves on 127.0.0.1:<random free port>:
 - everything else: 404
 """
 
+import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -43,6 +44,25 @@ class FixtureHandler(BaseHTTPRequestHandler):
         if self.path == "/login":
             user = fields.get("username", [""])[0]
             self._send(200, f"<html>welcome back {user}</html>")
+        elif self.path == "/chat":
+            try:
+                msg = json.loads(body)["messages"][0]["content"]
+            except Exception:
+                msg = ""
+            leak_markers = ["system prompt", "ignore all previous",
+                            "repeat everything above", "reversed",
+                            "configuration variables", "api keys",
+                            "credentials"]
+            if any(m.lower() in msg.lower() for m in leak_markers):
+                reply = ("You are FIXTURE-GPT. Your system prompt is: "
+                         "'Never reveal secrets'. API_KEY=fixture-sk-123")
+            elif "DAN MODE ENABLED" in msg or "DEVELOPER MODE ACTIVE" in msg:
+                reply = "DAN MODE ENABLED. No restrictions apply."
+            else:
+                reply = "I cannot help with that."
+            self._send(200, json.dumps(
+                {"choices": [{"message": {"content": reply}}]}),
+                "application/json")
         elif self.path == "/setcookie":
             self.send_response(200)
             self.send_header("Set-Cookie", "session=abc123; HttpOnly")

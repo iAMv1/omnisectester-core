@@ -93,6 +93,12 @@ def cmd_scan(opts: dict) -> dict:
         # expose gate decision so the Node CLI can mirror the exit code
         result["gate"] = {"fail_on": fail_on,
                           "triggered": _exit_code(result, fail_on) == 2}
+    elif platform == "ai":
+        from omnisectester import llm_scan
+        result = llm_scan.run_llm_scan(target, rate_limit=rate,
+                                       api_key=opts.get("auth_token"))
+        result["gate"] = {"fail_on": fail_on,
+                          "triggered": _exit_code(result, fail_on) == 2}
         # optional LLM narrative/chaining layer - only when --llm AND key+model set.
         # Never touches deterministic findings; lands under llm_analysis.
         if opts.get("llm"):
