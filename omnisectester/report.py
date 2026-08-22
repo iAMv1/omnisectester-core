@@ -1,6 +1,7 @@
 """Render findings into markdown + HTML reports (no template deps)."""
 
 import html
+import json
 import os
 import time
 
@@ -60,6 +61,43 @@ td,th{{border:1px solid #ddd;padding:8px;text-align:left;vertical-align:top}}</s
 {body}</table></body></html>"""
 
 
+SEV_TO_SARIF = {"critical": "error", "high": "error", "medium": "warning",
+                "low": "note", "info": "note"}
+
+
+def to_sarif(result: dict) -> str:
+    """GitHub code scanning-compatible SARIF 2.1.0."""
+    target = result.get("target", "")
+    rules, results = [], []
+    seen_rules = set()
+    for f in result.get("findings") or []:
+        if f["id"] not in seen_rules:
+            seen_rules.add(f["id"])
+            rules.append({
+                "id": f"OMNI/{f['id']}",
+                "shortDescription": {"text": f["title"]},
+                "defaultConfiguration": {"level": SEV_TO_SARIF.get(f["severity"], "note")},
+                "properties": {"cwe": f.get("cwe"), "security-severity": f["severity"]},
+            })
+        results.append({
+            "ruleId": f"OMNI/{f['id']}",
+            "level": SEV_TO_SARIF.get(f["severity"], "note"),
+            "message": {"text": f"{f['evidence']} | Fix: {f['remediation']}"},
+            "locations": [{"physicalLocation": {
+                "artifactLocation": {"uri": target},
+                "region": {"startLine": 1}}}],
+        })
+    return json.dumps({
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{"tool": {"driver": {
+                    "name": "omnisectester-core",
+                    "informationUri": "https://github.com/iAMv1/omnisectester",
+                    "rules": rules}},
+                  "results": results}],
+    })
+
+
 def write_reports(result: dict, output_dir: str, formats: list) -> list:
     """Write report files; returns list of written paths."""
     os.makedirs(output_dir, exist_ok=True)
@@ -68,12 +106,13 @@ def write_reports(result: dict, output_dir: str, formats: list) -> list:
     for fmt in formats:
         path = os.path.join(output_dir, f"{stem}.{fmt}")
         if fmt == "json":
-            import json
             content = json.dumps(result, indent=2)
         elif fmt == "md":
             content = to_markdown(result)
         elif fmt == "html":
             content = to_html(result)
+        elif fmt == "sarif":
+            content = to_sarif(result)
         else:
             continue
         with open(path, "w", encoding="utf-8") as fh:

@@ -118,6 +118,17 @@ class TestAgent(unittest.TestCase):
         self.assertIn("session=abc123", resp.get("body", ""),
                       "adopted cookie not sent on subsequent requests")
 
+    def test_sarif_output_structure(self):
+        result = agent.run_agent(self.fix.url, rate_limit=50, budget=80)
+        from omnisectester.report import to_sarif
+        sarif = json.loads(to_sarif(result))
+        self.assertEqual(sarif["version"], "2.1.0")
+        runs = sarif["runs"][0]
+        self.assertGreaterEqual(len(runs["results"]), 1)
+        ids = {r["ruleId"] for r in runs["results"]}
+        rule_ids = {r["id"] for r in runs["tool"]["driver"]["rules"]}
+        self.assertTrue(ids <= rule_ids, "result references undefined rule")
+
     def test_budget_is_respected(self):
         tight = agent.run_agent(self.fix.url, rate_limit=50, budget=5)
         self.assertLessEqual(tight["agent"]["requests_used"], 7)  # small slack
@@ -191,3 +202,4 @@ class TestOsv(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
