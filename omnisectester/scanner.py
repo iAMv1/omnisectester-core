@@ -175,6 +175,29 @@ def scan_web(target: str, rate_limit: float = 1.0) -> dict:
     }
 
 
+def check_cookie_flags(resp) -> list:
+    """Audit Set-Cookie attributes: Secure, HttpOnly, SameSite."""
+    found = []
+    raw = [v for k, v in (resp.get("headers") or {}).items()
+           if k.lower() == "set-cookie"]
+    for sc in raw:
+        name = sc.split("=")[0].strip()
+        low = sc.lower()
+        if "secure" not in low:
+            found.append(_finding("C001", f"Cookie `{name}` missing Secure", "medium",
+                                  f"Set-Cookie without Secure: {sc[:120]}", "CWE-614",
+                                  "Add the Secure attribute."))
+        if "httponly" not in low:
+            found.append(_finding("C002", f"Cookie `{name}` missing HttpOnly", "low",
+                                  f"Set-Cookie without HttpOnly: {sc[:120]}", "CWE-1004",
+                                  "Add HttpOnly to block script access."))
+        if "samesite" not in low:
+            found.append(_finding("C003", f"Cookie `{name}` missing SameSite", "low",
+                                  f"Set-Cookie without SameSite: {sc[:120]}", "CWE-1275",
+                                  "Add SameSite=Lax or Strict."))
+    return found
+
+
 def check_post_forms(forms: list, base_url: str) -> list:
     """Static POST-form audit: CSRF presence + transport security."""
     found = []

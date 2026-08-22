@@ -118,6 +118,12 @@ class TestAgent(unittest.TestCase):
         self.assertIn("session=abc123", resp.get("body", ""),
                       "adopted cookie not sent on subsequent requests")
 
+    def test_cookie_flag_findings(self):
+        result = agent.run_agent(self.fix.url, rate_limit=50, budget=80)
+        ids = {f["id"] for f in result["findings"]}
+        for expected in ("C001", "C002", "C003"):
+            self.assertIn(expected, ids, f"cookie finding {expected} missing")
+
     def test_sarif_output_structure(self):
         result = agent.run_agent(self.fix.url, rate_limit=50, budget=80)
         from omnisectester.report import to_sarif

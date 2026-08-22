@@ -16,7 +16,8 @@ from urllib.parse import urlparse
 from . import crawler as crawler_mod
 from . import httpc
 from .scanner import (_finding, _sort, check_paths, check_tls, check_post_forms,
-                      probe_post_reflection, SECURITY_HEADERS)
+                      check_cookie_flags, probe_post_reflection,
+                      SECURITY_HEADERS)
 from .threatmodel import build_threat_model
 
 DEFAULT_BUDGET = 60          # max total HTTP requests for the whole agent run
@@ -45,14 +46,15 @@ def _probe_reflection(url: str, path: str, param: str, limiter) -> list:
     return []
 
 
-def _headers_on_page(page_url: str, limiter, header_miss_counter: dict) -> None:
+def _headers_on_page(page_url: str, limiter, header_miss_counter: dict):
     limiter.wait()
     resp = httpc.request(page_url)
     if not resp.get("ok"):
-        return
+        return None
     for header, sev, fid, title, cwe, fix in SECURITY_HEADERS:
         if header not in resp["headers"]:
             header_miss_counter[fid] = header_miss_counter.get(fid, 0) + 1
+    return resp
 
 
 def run_agent(target: str, rate_limit: float = 4.0, max_pages: int = 25,
@@ -86,14 +88,16 @@ def run_agent(target: str, rate_limit: float = 4.0, max_pages: int = 25,
     def budget_left():
         return max(0, budget - used)
 
-    # headers across discovered pages (capped by remaining budget)
+    # headers + cookie audit across discovered pages (single fetch each)
     misses = {}
+    cookie_findings = []
     for page in surface["pages"]:
         if budget_left() <= 0:
             break
-        before = used
-        _headers_on_page(page["url"], limiter, misses)
+        resp = _headers_on_page(page["url"], limiter, misses)
         used += 1
+        if resp:
+            cookie_findings += check_cookie_flags(resp)
     for fid, count in sorted(misses.items()):
         meta = next(m for m in SECURITY_HEADERS if m[2] == fid)
         sev = "medium" if count == len(surface["pages"]) else "low"
@@ -101,6 +105,7 @@ def run_agent(target: str, rate_limit: float = 4.0, max_pages: int = 25,
             fid, meta[3] + f" ({count}/{len(surface['pages'])} pages)", sev,
             f"Missing on {count} of {len(surface['pages'])} crawled pages.",
             meta[4], meta[5]))
+    findings += cookie_findings
 
     base_findings_probe = urlparse(target if "://" in target else f"https://{target}")
     if base_findings_probe.scheme != "https":

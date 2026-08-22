@@ -61,7 +61,11 @@ class FixtureHandler(BaseHTTPRequestHandler):
             # reflects q verbatim inside brackets - XSS probe target
             self._send(200, SEARCH_PAGE.format(q))
         elif path == "/about":
-            self._send(200, ABOUT_PAGE)
+            self.send_response(200)
+            self.send_header("Set-Cookie", "prefs=dark")
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(ABOUT_PAGE.encode())
         elif path == "/authecho":
             auth = self.headers.get("Authorization", "(none)")
             cookie = self.headers.get("Cookie", "(none)")
