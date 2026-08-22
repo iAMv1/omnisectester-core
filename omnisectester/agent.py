@@ -18,6 +18,7 @@ from . import httpc
 from .scanner import (_finding, _sort, check_paths, check_tls, check_post_forms,
                       check_cookie_flags, check_open_redirect,
                       probe_post_reflection, SECURITY_HEADERS)
+from . import auth_scan
 from .threatmodel import build_threat_model
 
 DEFAULT_BUDGET = 60          # max total HTTP requests for the whole agent run
@@ -151,6 +152,28 @@ def run_agent(target: str, rate_limit: float = 4.0, max_pages: int = 25,
     if budget_left() > 0:
         findings += check_open_redirect(surface["base"],
                                         surface["probe_targets"], limiter)
+
+    # auth flows / business logic (A001/A002/B001)
+    if budget_left() > 0:
+        findings += auth_scan.check_admin_unauthenticated(
+            surface["base"], limiter, auth_present=bool(auth_token))
+    if budget_left() > 12:
+        findings += auth_scan.check_rate_limiting(surface["base"], limiter)
+        used += 12
+    probed_id_param = False
+    for pt in surface["probe_targets"]:
+        if budget_left() <= 2:
+            break
+        if pt["param"].lower() not in auth_scan.ID_PARAM_NAMES:
+            continue
+        before = len(findings)
+        findings += auth_scan.probe_idor(
+            surface["base"], [pt], limiter,
+            budget_left=lambda: budget - used)
+        used += 2
+        probed_id_param = True
+        if len(findings) == before:
+            break  # one viable candidate is enough to judge
 
     # ---- phase 4/5: dedupe + validate + refresh TM ----
     dedup = {}

@@ -17,6 +17,7 @@ PAGE = """<html><head><title>fixture</title></head><body>
 <a href="/search">search</a>
 <a href="/about">about</a>
 <a href="/goto?next=https://external.example/">go</a>
+<a href="/user?id=1">profile</a>
 <form action="/search" method="get"><input name="q"></form>
 <form action="/login" method="post"><input name="username"><input name="password"></form>
 </body></html>"""
@@ -112,7 +113,12 @@ class FixtureHandler(BaseHTTPRequestHandler):
         elif path == "/robots.txt":
             self._send(200, "User-agent: *\nDisallow: /admin\n", "text/plain")
         elif path == "/admin":
-            self._send(200, "<html>admin panel</html>")
+            self._send(200, "<html><body>Admin Dashboard - manage users and settings</body></html>")
+        elif path == "/user":
+            from urllib.parse import parse_qs, urlparse
+            qs = parse_qs(urlparse(self.path).query)
+            uid = qs.get("id", ["1"])[0]
+            self._send(200, f"<html>profile page for user {uid}: email=user{uid}@example.test</html>")
         else:
             self._send(404, "not found")
 

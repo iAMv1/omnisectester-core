@@ -139,6 +139,15 @@ class TestAgent(unittest.TestCase):
         self.assertIsNone(days)
         self.assertIn("unparseable", err)
 
+    def test_auth_scan_findings(self):
+        result = agent.run_agent(self.fix.url, rate_limit=50, budget=150)
+        ids = {f["id"] for f in result["findings"]}
+        self.assertIn("A001", ids, "unauthenticated admin not detected")
+        self.assertIn("A002", ids, "IDOR pattern on /user?id= not detected")
+        self.assertIn("B001", ids, "rate-limit absence not detected")
+        a2 = next(f for f in result["findings"] if f["id"] == "A002")
+        self.assertIn("curl -s", a2["poc"])
+
     def test_sarif_output_structure(self):
         result = agent.run_agent(self.fix.url, rate_limit=50, budget=80)
         from omnisectester.report import to_sarif
